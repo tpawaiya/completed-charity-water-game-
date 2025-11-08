@@ -1,101 +1,131 @@
+// ====== Elements ======
+const container   = document.getElementById("game-container");
+const scoreEl     = document.getElementById("score");
+const timeEl      = document.getElementById("time");
+const startBtn    = document.getElementById("start-btn");
+const messageEl   = document.getElementById("message");
+const confettiLay = document.getElementById("confetti");
+const difficultyEl= document.getElementById("difficulty");
+const soundToggle = document.getElementById("sound-enabled");
+
+const sfxCatch = document.getElementById("sfx-catch");
+const sfxBad   = document.getElementById("sfx-bad");
+const sfxWin   = document.getElementById("sfx-win");
+
 // ====== Game State ======
 let gameRunning = false;
 let spawnTimer = null;
 let secondTimer = null;
+let difficultyTick = null;
 
-const timeStart = 30;          // seconds
-let timeLeft = timeStart;
 let score = 0;
+let timeLeft = 30;
 
-const container = document.getElementById("game-container");
-const scoreEl = document.getElementById("score");
-const timeEl  = document.getElementById("time");
-const startBtn = document.getElementById("start-btn");
-const messageEl = document.getElementById("message");
-const confettiLayer = document.getElementById("confetti");
+// dynamic knobs
+let badChance = 0.25;
+let baseSpawnMs = 900;
+let baseFallMs  = 3600;
+let WIN_SCORE   = 15;
 
-// Difficulty / obstacle knobs (LevelUp)
-let badChance = 0.25;          // probability of spawning a bad drop
-let baseSpawnMs = 900;         // how often to spawn (ms)
-let baseFallMs  = 3600;        // base fall duration (ms)
-let difficultyTick = null;     // interval to ramp difficulty
+// Milestones (LevelUp): show a message once when thresholds reached
+const milestones = [
+  {score:5,  text:"💧Nice flow! 5 points."},
+  {score:10, text:"🌊Halfway there! 10 points."},
+  {score:15, text:"🚰 Clean streak! 15 points."},
+  {score:20, text:"🏆 Water champion!"}
+];
+let firedMilestones = new Set();
 
-// Win condition (feel free to tune)
-const WIN_SCORE = 15;
+const modePresets = {
+  easy:   {time:45, win:10, spawn:1000, fall:3800, badStart:0.20 },
+  normal: {time:30, win:15, spawn:900,  fall:3600, badStart:0.25 },
+  hard:   {time:20, win:20, spawn:750,  fall:3200, badStart:0.30 }
+};
 
 // ====== Controls ======
 startBtn.addEventListener("click", () => {
   if (!gameRunning) startGame();
-  else resetGame(); // button acts as Reset during a run
+  else resetGame(); // Reset during play
 });
 
-// ====== Core ======
+// ====== Game Flow ======
+function applyDifficulty(){
+  const mode = difficultyEl.value;
+  const p = modePresets[mode];
+
+  timeLeft    = p.time;
+  WIN_SCORE   = p.win;
+  baseSpawnMs = p.spawn;
+  baseFallMs  = p.fall;
+  badChance   = p.badStart;
+
+  timeEl.textContent = timeLeft;
+}
+
 function startGame(){
   if (gameRunning) return;
   gameRunning = true;
 
-  // UI state
-  startBtn.textContent = "Reset";
-  startBtn.setAttribute("aria-pressed", "true");
-  messageEl.textContent = "";
+  // Difficulty chosen before start
+  applyDifficulty();
+
+  // reset state
   score = 0;
-  timeLeft = timeStart;
-  badChance = 0.25;
+  firedMilestones.clear();
+  messageEl.textContent = "";
   scoreEl.textContent = score;
-  timeEl.textContent = timeLeft;
   clearConfetti();
   clearDrops();
+
+  // UI
+  startBtn.textContent = "Reset";
+  startBtn.setAttribute("aria-pressed","true");
+  difficultyEl.disabled = true;
 
   // Timers
   spawnTimer = setInterval(createDrop, baseSpawnMs);
   secondTimer = setInterval(tick, 1000);
 
-  // Gradually ramp challenge: more bad drops & faster fall
+  // Ramp challenge every 5s
   difficultyTick = setInterval(() => {
-    badChance = Math.min(0.7, badChance + 0.08);
-    // modestly speed up spawns and fall as time goes
+    badChance = Math.min(0.75, badChance + 0.08);
     if (spawnTimer){
       clearInterval(spawnTimer);
-      // never below 450ms
       baseSpawnMs = Math.max(450, baseSpawnMs - 70);
       spawnTimer = setInterval(createDrop, baseSpawnMs);
     }
-    baseFallMs = Math.max(2000, baseFallMs - 150);
+    baseFallMs = Math.max(1800, baseFallMs - 120);
   }, 5000);
 }
 
 function endGame(){
   gameRunning = false;
-  // stop timers
-  clearInterval(spawnTimer); spawnTimer = null;
-  clearInterval(secondTimer); secondTimer = null;
+  clearInterval(spawnTimer);   spawnTimer = null;
+  clearInterval(secondTimer);  secondTimer = null;
   clearInterval(difficultyTick); difficultyTick = null;
 
-  // message + celebration if win
   if (score >= WIN_SCORE){
     messageEl.textContent = `You did it! 🎉 Score ${score}.`;
     celebrate();
+    play(sfxWin);
   } else {
     messageEl.textContent = `Time! Final score ${score}. Try again?`;
   }
 
   startBtn.textContent = "Start Game";
-  startBtn.setAttribute("aria-pressed", "false");
+  startBtn.setAttribute("aria-pressed","false");
+  difficultyEl.disabled = false;
 }
 
 function resetGame(){
-  // hard reset to initial state and restart
-  clearInterval(spawnTimer); spawnTimer = null;
-  clearInterval(secondTimer); secondTimer = null;
+  clearInterval(spawnTimer);   spawnTimer = null;
+  clearInterval(secondTimer);  secondTimer = null;
   clearInterval(difficultyTick); difficultyTick = null;
+
   clearDrops();
   clearConfetti();
-  baseSpawnMs = 900;
-  baseFallMs = 3600;
   score = 0;
-  timeLeft = timeStart;
   scoreEl.textContent = score;
-  timeEl.textContent = timeLeft;
   messageEl.textContent = "";
   gameRunning = false;
   startGame();
@@ -112,42 +142,37 @@ function createDrop(){
   const drop = document.createElement("div");
   drop.classList.add("water-drop");
 
-  // type: clean vs dirty
+  // type
   const isBad = Math.random() < badChance;
   drop.classList.add(isBad ? "bad" : "good");
   drop.dataset.type = isBad ? "bad" : "good";
 
-  // random size (50–80 px)
-  const size = 50 + Math.random() * 30;
+  // size
+  const size = 50 + Math.random()*30;
   drop.style.width = `${size}px`;
-  drop.style.height = `${size}px`;
+  drop.style.height= `${size}px`;
 
-  // place horizontally within container bounds (account for size)
+  // position
   const cw = container.clientWidth;
   const ch = container.clientHeight;
   const x = Math.random() * (cw - size);
   drop.style.left = `${x}px`;
 
-  // fall duration (vary a bit)
-  const jitter = Math.random() * 600 - 300; // +/- 300ms
+  // animation
+  const jitter = Math.random()*600 - 300;
   const fallMs = Math.max(1400, baseFallMs + jitter);
   drop.style.animationDuration = `${fallMs}ms`;
-  // set per-element fall distance (container height + size so it fully exits)
   drop.style.setProperty("--fall-distance", `${ch + size + 12}px`);
   drop.style.setProperty("--start-offset", `${size}px`);
 
-  // pointer handler (works for mouse & touch)
-  drop.addEventListener("pointerdown", (e) => {
+  drop.addEventListener("pointerdown", (e)=>{
     e.preventDefault();
     handleCatch(drop);
   }, {passive:false});
 
-  // when it hits bottom (animation ends) — remove it
-  drop.addEventListener("animationend", () => {
-    // Optional: small penalty for missing a clean drop (tunable)
+  drop.addEventListener("animationend", ()=>{
     if (drop.dataset.type === "good" && gameRunning){
-      feedbackMiss();
-      // Uncomment to penalize misses:
+      // optional: miss penalty; currently feedback only
       // updateScore(-1);
     }
     drop.remove();
@@ -164,70 +189,76 @@ function handleCatch(drop){
   if (type === "good"){
     updateScore(+1);
     flash(container, "flash-green");
+    play(sfxCatch);
   } else {
-    updateScore(-2);               // penalty per brief
+    updateScore(-2);
     shake(container);
     flash(container, "flash-red");
+    play(sfxBad);
   }
 }
 
-// ====== Feedback & Utils ======
+// ====== Scoring, Milestones, Feedback ======
 function updateScore(delta){
-  score = Math.max(0, score + delta); // clamp at 0 to keep it positive
+  score = Math.max(0, score + delta);
   scoreEl.textContent = score;
+
+  // milestone messages once
+  for (const m of milestones){
+    if (score >= m.score && !firedMilestones.has(m.score)){
+      messageEl.textContent = m.text;
+      firedMilestones.add(m.score);
+      break;
+    }
+  }
 }
 
 function flash(el, cls){
-  el.classList.remove(cls); // restart animation if present
-  void el.offsetWidth;      // reflow
+  el.classList.remove(cls);
+  void el.offsetWidth;
   el.classList.add(cls);
   setTimeout(()=> el.classList.remove(cls), 260);
 }
-
 function shake(el){
   el.classList.remove("shake");
   void el.offsetWidth;
   el.classList.add("shake");
   setTimeout(()=> el.classList.remove("shake"), 260);
 }
-
 function clearDrops(){
   [...container.querySelectorAll(".water-drop")].forEach(d=>d.remove());
 }
 
+// ====== Confetti ======
 function celebrate(){
-  // simple confetti (no libs)
-  for (let i = 0; i < 120; i++){
+  for (let i=0;i<120;i++){
     const bit = document.createElement("div");
     bit.className = "confetti-bit";
-    const left = Math.random() * 100; // vw
-    const delay = Math.random() * 300; // ms
-    const scale = .8 + Math.random() * .8;
+    const left = Math.random()*100;
+    const delay= Math.random()*300;
+    const scale= .8 + Math.random()*.8;
 
     bit.style.left = `${left}vw`;
-    bit.style.top = `-10vh`;
+    bit.style.top  = `-10vh`;
     bit.style.transform = `translateY(0) rotate(0) scale(${scale})`;
     bit.style.animationDelay = `${delay}ms`;
     bit.style.background = confettiColor();
 
-    confettiLayer.appendChild(bit);
-    // cleanup
+    confettiLay.appendChild(bit);
     setTimeout(()=> bit.remove(), 2000 + delay);
   }
 }
-
 function clearConfetti(){
-  [...confettiLayer.children].forEach(n=>n.remove());
+  [...confettiLay.children].forEach(n=>n.remove());
 }
-
 function confettiColor(){
-  // pick from brand-ish palette
   const colors = ["#FFC907","#2E9DF7","#8BD1CB","#4FCB53","#FF902A","#F5402C","#159A48","#F16061"];
   return colors[Math.floor(Math.random()*colors.length)];
 }
 
-function feedbackMiss(){
-  // subtle message on miss of a good drop (optional)
-  // messageEl.textContent = "You missed a clean drop!";
-  // setTimeout(()=> { if(messageEl.textContent.includes("missed")) messageEl.textContent = ""; }, 600);
+// ====== Sound ======
+function play(el){
+  if (!soundToggle.checked || !el) return;
+  // Safely ignore if file missing or blocked
+  try { el.currentTime = 0; el.play().catch(()=>{}); } catch(e){}
 }

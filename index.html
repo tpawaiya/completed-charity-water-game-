@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Water Drop Game</title>
+  <title>Water Drop</title>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
@@ -14,7 +16,22 @@
     <div class="score-panel" role="group" aria-label="Score and Controls">
       <div class="score">Score: <span id="score" aria-live="polite">0</span></div>
       <div class="timer">Time: <span id="time" aria-live="polite">30</span>s</div>
+
       <div class="controls">
+       
+        <label class="select-label" for="difficulty">Mode</label>
+        <select id="difficulty" aria-label="Difficulty">
+          <option value="easy">Easy</option>
+          <option value="normal" selected>Normal</option>
+          <option value="hard">Hard</option>
+        </select>
+
+        
+        <label class="sound-toggle">
+          <input type="checkbox" id="sound-enabled" checked>
+          Sound
+        </label>
+
         <button id="start-btn" aria-pressed="false">Start Game</button>
       </div>
     </div>
@@ -22,11 +39,24 @@
     <div id="message" role="status" aria-live="polite"></div>
 
     <div id="game-container" aria-label="Game Area">
-      <!-- drops are injected here -->
+      
     </div>
   </div>
 
-  <!-- Confetti container -->
+  <footer class="site-footer">
+    <p>
+      Learn more or donate: 
+      <a href="https://www.charitywater.org/" target="_blank" rel="noopener">charitywater.org</a>
+      · Brand guide:
+      <a href="https://d11sa1anfvm2xk.cloudfront.net/media/downloads/brandbook-2016.pdf#page=19" target="_blank" rel="noopener">typography</a>
+    </p>
+  </footer>
+
+  <audio id="sfx-catch" src="sounds/catch.mp3" preload="auto"></audio>
+  <audio id="sfx-bad"   src="sounds/error.mp3" preload="auto"></audio>
+  <audio id="sfx-win"   src="sounds/success.mp3" preload="auto"></audio>
+
+ 
   <div id="confetti"></div>
 
   <script src="script.js"></script>
